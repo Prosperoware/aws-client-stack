@@ -27,8 +27,8 @@ Parameters:
   CodeBuildRole:
     Type: String
 Conditions:
-  HasDefaultEncryption: !Equals [!Ref Encryption, 'Default']
-  HasKMSEncryption: !Equals [!Ref Encryption, 'KMS']
+  HasDefaultEncryption: !Equals [!Ref Encryption, 'Default Encryption (SSE-S3)']
+  HasKMSEncryption: !Equals [!Ref Encryption, 'AWS Key Management Service key (SSE-KMS)']
 Resources:
   ContentSyncJobProcessQueue:
     Type: AWS::SQS::Queue
