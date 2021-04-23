@@ -1,23 +1,50 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Content Mover & BC Stack
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - 
+        Label: 
+          default: "Instance Configuration"
+        Parameters: 
+          - InstanceName
+      - 
+        Label: 
+          default: "RDS Instance Configuration"
+        Parameters: 
+          - DBMasterUsername
+          - DBMasterPassword
+      -
+        Label:
+          default: "S3 Bucket Configuration"
+        Parameters:
+          - Encryption
+    ParameterLabels: 
+      InstanceName: 
+        default: "Instance Name"
+      DBMasterUsername:
+        default: "Database Master Username"
+      DBMasterPassword:
+        default: "Database Master Password"
+      Encryption:
+        default: "S3 Encryption"
 Parameters:
-  Domain:
-    Description: Domain name
+  InstanceName:
+    Description: Your instance name (e.g. prosperoware)
     Type: String
-  DbMasterUsername:
-    Description: User name of the master user
+  DBMasterUsername:
+    Description: Master username for your RDS Instance.
     Type: String
-  DbMasterPassword:
-    Description: Password for the master user
+  DBMasterPassword:
+    Description: Master password for your RDS instance.
     Type: String
     NoEcho: true
   Encryption:
-    Description: 'Encryption method of S3 Bucket'
     Type: String
     AllowedValues:
-    - 'Default'
-    - 'KMS'
+    - 'Default Encryption (SSE-S3)'
+    - 'AWS Key Management Service key (SSE-KMS)'
 Resources:
   NetworkingStack:
     Type: AWS::CloudFormation::Stack
@@ -35,9 +62,9 @@ Resources:
       TemplateURL: https://prosperoware-cloudformation-templates.s3.amazonaws.com/nested_stacks/resources.yml
       TimeoutInMinutes: '15'
       Parameters:
-        Domain: !Ref Domain
-        DbMasterUsername: !Ref DbMasterUsername
-        DbMasterPassword: !Ref DbMasterPassword
+        Domain: !Ref InstanceName
+        DbMasterUsername: !Ref DBMasterUsername
+        DbMasterPassword: !Ref DBMasterPassword
         Encryption: !Ref Encryption
         VPC: !GetAtt  NetworkingStack.Outputs.VPC
         PrivateSubnetOne: !GetAtt NetworkingStack.Outputs.PrivateSubnetOne
