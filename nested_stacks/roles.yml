@@ -1,0 +1,80 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: IAM Roles Stack
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: content_sync_lambda_service_node
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+            
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - arn:aws:iam::aws:policy/SecretsManagerReadWrite
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+        - arn:aws:iam::aws:policy/AmazonVPCFullAccess
+        - arn:aws:iam::aws:policy/AmazonSNSFullAccess
+
+      Policies:
+        - PolicyName: ContentSyncLambdaBasicExecution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                Resource: "arn:aws:logs:*:*:*"
+
+        - PolicyName: KMSWriteLambda
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:DescribeCustomKeyStores
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey
+                  - kms:ReEncryptTo
+                  - kms:GenerateDataKeyWithoutPlaintext
+                  - kms:DescribeKey
+                  - kms:GenerateDataKeyPairWithoutPlaintext
+                  - kms:GenerateDataKeyPair
+                  - kms:ReEncryptFrom
+                Resource: "*"
+  
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: contentsync_role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+              - Effect: Allow
+                Principal:
+                  Service:
+                    - "codebuild.amazonaws.com"
+                Action:
+                  - "sts:AssumeRole"
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+Outputs:
+  CodeBuildRole:
+    Value: !GetAtt  CodeBuildRole.Arn
