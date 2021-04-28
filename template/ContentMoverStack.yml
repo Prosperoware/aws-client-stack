@@ -13,9 +13,9 @@ Metadata:
         Label: 
           default: "RDS Instance Configuration"
         Parameters: 
+          - DBInstanceClass
           - DBMasterUsername
           - DBMasterPassword
-          - DBInstanceClass
       -
         Label:
           default: "S3 Bucket Configuration"
