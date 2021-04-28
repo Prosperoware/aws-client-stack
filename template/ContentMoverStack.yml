@@ -1,0 +1,587 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Content Mover & BC Stack
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - 
+        Label: 
+          default: "Instance Configuration"
+        Parameters: 
+          - InstanceName
+      - 
+        Label: 
+          default: "RDS Instance Configuration"
+        Parameters: 
+          - DBMasterUsername
+          - DBMasterPassword
+          - DBInstanceClass
+      -
+        Label:
+          default: "S3 Bucket Configuration"
+        Parameters:
+          - Encryption
+    ParameterLabels: 
+      InstanceName: 
+        default: "Instance Name"
+      DBMasterUsername:
+        default: "Database Master Username"
+      DBMasterPassword:
+        default: "Database Master Password"
+      DBInstanceClass:
+        default: "Database Instance Class"
+      Encryption:
+        default: "S3 Encryption"
+Parameters:
+  InstanceName:
+    Description: Your instance name (e.g. prosperoware)
+    Type: String
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBMasterUsername:
+    Description: Master username for your RDS Instance.
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBMasterPassword:
+    Description: Master password for your RDS instance.
+    Type: String
+    NoEcho: true
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+  DBInstanceClass:
+    Description: The database instance type
+    Type: String
+    Default: db.t2.small
+    AllowedValues: [db.t1.micro, db.m1.small, db.m1.medium, db.m1.large, db.m1.xlarge,
+      db.m2.xlarge, db.m2.2xlarge, db.m2.4xlarge, db.m3.medium, db.m3.large, db.m3.xlarge,
+      db.m3.2xlarge, db.m4.large, db.m4.xlarge, db.m4.2xlarge, db.m4.4xlarge, db.m4.10xlarge,
+      db.r3.large, db.r3.xlarge, db.r3.2xlarge, db.r3.4xlarge, db.r3.8xlarge, db.m2.xlarge,
+      db.m2.2xlarge, db.m2.4xlarge, db.cr1.8xlarge, db.t2.micro, db.t2.small, db.t2.medium,
+      db.t2.large]
+    ConstraintDescription: must select a valid database instance type.
+  Encryption:
+    Type: String
+    AllowedValues:
+    - 'Default Encryption (SSE-S3)'
+    - 'AWS Key Management Service key (SSE-KMS)'
+Conditions:
+  HasDefaultEncryption: !Equals [!Ref Encryption, 'Default Encryption (SSE-S3)']
+  HasKMSEncryption: !Equals [!Ref Encryption, 'AWS Key Management Service key (SSE-KMS)']
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      CidrBlock: 10.0.0.0/16
+      Tags:
+      - Key: Name
+        Value: VPC with public and private subnets (2 AZs) & NAT
+      - Key: Project
+        Value: Prosperoware Content Sync
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties: 
+      Tags: 
+      - Key: Name 
+        Value: Internet Gateway
+  GatewayToInternet:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId:
+        Ref: VPC
+      InternetGatewayId:
+        Ref: InternetGateway
+  NATGatewayOne:
+    DependsOn: GatewayToInternet
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - ElasticIPOne
+        - AllocationId
+      SubnetId:
+        Ref: PublicSubnetOne
+      Tags: 
+      - Key: Name
+        Value: 'NAT Gateway #1'
+  ElasticIPOne:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags: 
+      - Key: Name
+        Value: 'Elastic IP associated with NAT Gateway #1'
+  NATGatewayTwo:
+    DependsOn: GatewayToInternet
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - ElasticIPTwo
+        - AllocationId
+      SubnetId:
+        Ref: PublicSubnetTwo
+      Tags:
+      - Key: Name
+        Value: 'NAT Gateway #2'
+  ElasticIPTwo:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+      - Key: Name
+        Value: 'Elastic IP associated with NAT Gateway #2'
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: VPC
+      Tags: 
+      - Key: Name
+        Value: Public Route Table
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: InternetGateway
+  PublicSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: VPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone:
+        Fn::Select:
+        - '0'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      Tags:
+      - Key: Name
+        Value: 'Public subnet #1'
+  PublicSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: PublicSubnetOne
+      RouteTableId:
+        Ref: PublicRouteTable
+  PublicSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: VPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone:
+        Fn::Select:
+        - '1'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      Tags:
+      - Key: Name
+        Value: 'Public subnet #2'
+  PublicSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: PublicSubnetTwo
+      RouteTableId:
+        Ref: PublicRouteTable
+  PrivateRouteTableOne:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: Name 
+        Value: 'Private Route Table #1'
+  PrivateRouteToInternetOne:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: PrivateRouteTableOne
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NATGatewayOne
+  PrivateSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: PrivateSubnetOne
+      RouteTableId:
+        Ref: PrivateRouteTableOne
+  PrivateSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone:
+        Fn::Select:
+        - '0'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      Tags:
+      - Key: Name
+        Value: 'Private subnet #1'
+  PrivateRouteTableTwo:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: VPC
+      Tags: 
+      - Key: Name
+        Value: 'Private Route Table #2'
+  PrivateRouteToInternetTwo:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: PrivateRouteTableTwo
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NATGatewayTwo
+  PrivateSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: PrivateSubnetTwo
+      RouteTableId:
+        Ref: PrivateRouteTableTwo
+  PrivateSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone:
+        Fn::Select:
+        - '1'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      Tags:
+      - Key: Name
+        Value: 'Private subnet #2'
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for Lambda Functions"
+      GroupName: Lambda-SG
+      Tags:
+        - Key: Name
+          Value: 'Lambda Security Group'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - CidrIp: "0.0.0.0/0"
+          IpProtocol: "-1"
+        - CidrIpv6: "::/0"
+          IpProtocol: "-1"
+      SecurityGroupEgress:
+        - CidrIp: "0.0.0.0/0"
+          Description: "Allow all egress traffic"
+          IpProtocol: "-1"
+        - CidrIpv6: "::/0"
+          Description: "Allow all egress IPv6 traffic"
+          IpProtocol: "-1"
+  
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for RDS instance"
+      GroupName: RDS-SG
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: 'RDS Security Group'
+  SGIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref RDSSecurityGroup
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      SourceSecurityGroupId: !GetAtt LambdaSecurityGroup.GroupId
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: content_sync_lambda_service_node
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - arn:aws:iam::aws:policy/SecretsManagerReadWrite
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+        - arn:aws:iam::aws:policy/AmazonVPCFullAccess
+        - arn:aws:iam::aws:policy/AmazonSNSFullAccess
+      Policies:
+        - PolicyName: ContentSyncLambdaBasicExecution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                Resource: "arn:aws:logs:*:*:*"
+        - PolicyName: KMSWriteLambda
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:DescribeCustomKeyStores
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey
+                  - kms:ReEncryptTo
+                  - kms:GenerateDataKeyWithoutPlaintext
+                  - kms:DescribeKey
+                  - kms:GenerateDataKeyPairWithoutPlaintext
+                  - kms:GenerateDataKeyPair
+                  - kms:ReEncryptFrom
+                Resource: "*"
+  
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: contentsync_role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+              - Effect: Allow
+                Principal:
+                  Service:
+                    - "codebuild.amazonaws.com"
+                Action:
+                  - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  ContentSyncJobProcessQueue:
+    Type: AWS::SQS::Queue
+    Properties: 
+      DelaySeconds: 0
+      MaximumMessageSize: 262144 
+      MessageRetentionPeriod: 1209600
+      QueueName: contentsync-prod-job-process-v1
+      ReceiveMessageWaitTimeSeconds: 0
+      VisibilityTimeout: 960
+      Tags: 
+        - Key: Project
+          Value: Prosperoware Content Sync
+  ContentSyncETLProcessQueue:
+    Type: AWS::SQS::Queue
+    Properties: 
+      DelaySeconds: 0
+      MaximumMessageSize: 262144 
+      MessageRetentionPeriod: 1209600
+      QueueName: contentsync-prod-etl-process-v1
+      ReceiveMessageWaitTimeSeconds: 0
+      VisibilityTimeout: 960
+      Tags: 
+        - Key: Project
+          Value: Prosperoware Content Sync
+  
+  ConfigurationBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub
+        - content-sync-configuration-${InstanceName}
+        - {InstanceName: !Ref InstanceName}
+      Tags: 
+        - Key: Project
+          Value: Prosperoware Content Sync
+  S3DefaultEncryption:
+    Type: AWS::S3::Bucket
+    Condition: HasDefaultEncryption
+    Properties:
+        BucketName: !Sub 
+          - ${InstanceName}-prosperoware-io-encrypted-bucket
+          - {InstanceName: !Ref InstanceName}
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+        Tags: 
+          - Key: Project
+            Value: Prosperoware Content Sync
+  S3KMSEncryption:
+    Type: AWS::S3::Bucket
+    Condition: HasKMSEncryption
+    Properties:
+        BucketName: !Sub 
+          - ${InstanceName}-prosperoware-io-encrypted-bucket
+          - {InstanceName: !Ref InstanceName}
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              KMSMasterKeyID: !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3'
+              SSEAlgorithm: 'aws:kms'
+        Tags: 
+          - Key: Project
+            Value: Prosperoware Content Sync
+  
+  DBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties: 
+      DBSubnetGroupDescription: Subnet group for the security vpc
+      SubnetIds:
+        - !Ref PrivateSubnetOne
+        - !Ref PrivateSubnetTwo
+  RDSCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      DatabaseName: contentsync_prod
+      DBClusterIdentifier: !Sub 
+        - ${InstanceName}-cluster
+        - {InstanceName: !Ref InstanceName}
+      MasterUsername:
+        !Ref DBMasterUsername
+      MasterUserPassword:
+        !Ref DBMasterPassword
+      Engine: aurora-mysql
+      EngineVersion: '5.7.mysql_aurora.2.09.1'
+      DBSubnetGroupName:
+        !Ref DBSubnetGroup
+      DBClusterParameterGroupName:
+        !Ref RDSDBClusterParameterGroup
+      VpcSecurityGroupIds:
+        - !Ref RDSSecurityGroup
+      BackupRetentionPeriod: 35
+      DeletionProtection: true
+      StorageEncrypted: true
+    DeletionPolicy: "Snapshot"
+  RDSDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier:
+        !Ref InstanceName
+      DBSubnetGroupName:
+        !Ref DBSubnetGroup
+      DBParameterGroupName:
+        !Ref RDSDBParameterGroup
+      Engine: aurora-mysql
+      DBClusterIdentifier:
+        !Ref RDSCluster
+      PubliclyAccessible: 'false'
+      DBInstanceClass: db.t2.small
+  RDSDBClusterParameterGroup:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: Aurora Cluster Parameter Group
+      Family: aurora-mysql5.7
+      Parameters:
+        time_zone: US/Eastern
+        innodb_flush_log_at_trx_commit: 0
+        max_allowed_packet: 8388608
+        wait_timeout: 7200
+        server_audit_logging: 1
+  RDSDBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Aurora Parameter Group
+      Family: aurora-mysql5.7
+      Parameters:
+        sql_mode: IGNORE_SPACE
+        key_buffer_size: 2147483648
+        thread_cache_size: 100
+        bulk_insert_buffer_size: 16777216
+        general_log: 1
+        slow_query_log: 1
+        aurora_parallel_query: 'ON'
+        event_scheduler: 'ON'
+  
+  ContentSyncCodeBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub 
+        - ${InstanceName}-content_sync_project
+        - {InstanceName: !Ref InstanceName}
+      Description: CodeBuild project for Content Sync & ETL.
+      ServiceRole: !Ref CodeBuildRole
+      Source:
+        Type: S3
+        Location: !Sub 
+          - content-sync-configuration-${InstanceName}/serverless/
+          - {InstanceName: !Ref InstanceName}
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Type: LINUX_CONTAINER
+        Image: 'aws/codebuild/standard:4.0'
+        EnvironmentVariables:
+          - Name: CONFIGBUCKET
+            Type: PLAINTEXT
+            Value: !Sub 
+              - content-sync-configuration-${InstanceName}
+              - {InstanceName: !Ref InstanceName}
+      Artifacts:
+        Type: no_artifacts
+      VpcConfig:
+        SecurityGroupIds: 
+          - !Ref LambdaSecurityGroup
+        Subnets:
+          - !Ref PrivateSubnetOne
+          - !Ref PrivateSubnetTwo
+        VpcId: !Ref VPC
+  
+  DBUpdateCodeBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub 
+        - ${InstanceName}-dbupdate
+        - {InstanceName: !Ref InstanceName}
+      Description: CodeBuild project for updating Database Schema.
+      ServiceRole: !Ref CodeBuildRole
+      Source:
+        Type: S3
+        Location: !Sub 
+          - content-sync-configuration-${InstanceName}/liquibase/
+          - {InstanceName: !Ref InstanceName}
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Type: LINUX_CONTAINER
+        Image: 'aws/codebuild/standard:4.0'
+        EnvironmentVariables:
+          - Name: db_user
+            Type: PLAINTEXT
+            Value: xx
+          - Name: db_password
+            Type: PLAINTEXT
+            Value: xx
+      Artifacts:
+        Type: no_artifacts
+      VpcConfig:
+        SecurityGroupIds: 
+          - !Ref LambdaSecurityGroup
+        Subnets:
+          - !Ref PrivateSubnetOne
+          - !Ref PrivateSubnetTwo
+        VpcId: !Ref VPC
