@@ -411,21 +411,17 @@ Resources:
   
   ConfigurationBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
     Properties:
-      BucketName: !Sub
-        - content-sync-configuration-${InstanceName}
-        - {InstanceName: !Ref InstanceName}
+      BucketName: !Sub 'content-sync-configuration-${InstanceName}'
       Tags: 
         - Key: Project
           Value: Prosperoware Content Sync
   S3DefaultEncryption:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
     Condition: HasDefaultEncryption
     Properties:
-        BucketName: !Sub 
-          - ${InstanceName}-prosperoware-io-encrypted-bucket
-          - {InstanceName: !Ref InstanceName}
+        BucketName: !Sub '${InstanceName}-prosperoware-io-encrypted-bucket'
         BucketEncryption:
           ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -434,12 +430,11 @@ Resources:
           - Key: Project
             Value: Prosperoware Content Sync
   S3KMSEncryption:
+    DeletionPolicy: Retain
     Type: AWS::S3::Bucket
     Condition: HasKMSEncryption
     Properties:
-        BucketName: !Sub 
-          - ${InstanceName}-prosperoware-io-encrypted-bucket
-          - {InstanceName: !Ref InstanceName}
+        BucketName: !Sub '${InstanceName}-prosperoware-io-encrypted-bucket'
         BucketEncryption:
           ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -460,9 +455,7 @@ Resources:
     Type: AWS::RDS::DBCluster
     Properties:
       DatabaseName: contentsync_prod
-      DBClusterIdentifier: !Sub 
-        - ${InstanceName}-cluster
-        - {InstanceName: !Ref InstanceName}
+      DBClusterIdentifier: !Sub ${InstanceName}-cluster
       MasterUsername:
         !Ref DBMasterUsername
       MasterUserPassword:
@@ -492,7 +485,7 @@ Resources:
       DBClusterIdentifier:
         !Ref RDSCluster
       PubliclyAccessible: 'false'
-      DBInstanceClass: db.t2.small
+      DBInstanceClass: !Ref DBInstanceClass
   RDSDBClusterParameterGroup:
     Type: AWS::RDS::DBClusterParameterGroup
     Properties:
@@ -522,16 +515,12 @@ Resources:
   ContentSyncCodeBuild:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub 
-        - ${InstanceName}-content_sync_project
-        - {InstanceName: !Ref InstanceName}
+      Name: !Sub '${InstanceName}-content_sync_project'
       Description: CodeBuild project for Content Sync & ETL.
       ServiceRole: !Ref CodeBuildRole
       Source:
         Type: S3
-        Location: !Sub 
-          - content-sync-configuration-${InstanceName}/serverless/
-          - {InstanceName: !Ref InstanceName}
+        Location: !Sub 'content-sync-configuration-${InstanceName}/serverless/'
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
         Type: LINUX_CONTAINER
@@ -539,9 +528,7 @@ Resources:
         EnvironmentVariables:
           - Name: CONFIGBUCKET
             Type: PLAINTEXT
-            Value: !Sub 
-              - content-sync-configuration-${InstanceName}
-              - {InstanceName: !Ref InstanceName}
+            Value: !Sub 'content-sync-configuration-${InstanceName}'
       Artifacts:
         Type: no_artifacts
       VpcConfig:
@@ -555,16 +542,12 @@ Resources:
   DBUpdateCodeBuild:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub 
-        - ${InstanceName}-dbupdate
-        - {InstanceName: !Ref InstanceName}
+      Name: !Sub '${InstanceName}-DBUpdate'
       Description: CodeBuild project for updating Database Schema.
       ServiceRole: !Ref CodeBuildRole
       Source:
         Type: S3
-        Location: !Sub 
-          - content-sync-configuration-${InstanceName}/liquibase/
-          - {InstanceName: !Ref InstanceName}
+        Location: !Sub 'content-sync-configuration-${InstanceName}/liquibase/'
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
         Type: LINUX_CONTAINER
